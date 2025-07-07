@@ -3,10 +3,10 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
-from user_service.schemas import UserCreate, UserSchema, Token
-from user_service.crud import create_user, get_user_by_email
-from user_service.database import get_db
-from user_service.auth import verify_password, create_access_token
+from user_api.schemas import UserCreate, UserSchema, Token
+from user_api.crud import create_user, get_user_by_email
+from user_api.database import get_db
+from user_api.auth import verify_password, create_access_token
 
 router = APIRouter()
 

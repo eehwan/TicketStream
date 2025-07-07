@@ -2,12 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 
-from event_service.schemas import EventCreate, EventSchema, SeatCreate, SeatSchema
-from event_service.crud import (
+from event_api.schemas import EventCreate, EventSchema, SeatCreate, SeatSchema
+from event_api.crud import (
     create_event, get_event, get_events, update_event, delete_event,
     create_seat, get_seats_by_event, get_seat, update_seat_reservation_status
 )
-from event_service.database import get_db
+from event_api.database import get_db
 
 router = APIRouter()
 

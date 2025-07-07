@@ -41,7 +41,7 @@ services:
 
   # Microservices
   reservation_api:
-    build: ./reservation_service
+    build: ./reservation_api
     container_name: reservation_api
     depends_on:
       kafka:
@@ -56,7 +56,7 @@ services:
       start_period: 10s
 
   order_processing_api:
-    build: ./order_processing_service
+    build: ./order_processing_api
     container_name: order_processing_api
     depends_on:
       kafka:
@@ -71,7 +71,7 @@ services:
       start_period: 45s
 
   user_api:
-    build: ./user_service
+    build: ./user_api
     container_name: user_api
     depends_on:
       shared_postgres_db:
@@ -86,7 +86,7 @@ services:
       start_period: 10s
 
   event_api:
-    build: ./event_service
+    build: ./event_api
     container_name: event_api
     depends_on:
       shared_postgres_db:

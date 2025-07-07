@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from event_service.models import Event, Seat
-from event_service.schemas import EventCreate, SeatCreate
+from event_api.models import Event, Seat
+from event_api.schemas import EventCreate, SeatCreate
 
 def create_event(db: Session, event: EventCreate):
     db_event = Event(**event.model_dump(), available_seats=event.total_seats)
