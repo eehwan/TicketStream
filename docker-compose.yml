@@ -1,0 +1,119 @@
+
+version: '3.8'
+
+services:
+  # Redpanda - Kafka compatible message queue
+  kafka:
+    image: redpandadata/redpanda:latest
+    container_name: kafka
+    command:
+      - redpanda
+      - start
+      - --smp 1
+      - --overprovisioned
+      - --node-id 0
+      - --kafka-addr PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr PLAINTEXT://kafka:9092
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep 'Healthy:.*true' || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 3
+
+  # Shared PostgreSQL Database
+  shared_postgres_db:
+    image: postgres:13
+    container_name: shared_postgres_db
+    environment:
+      POSTGRES_DB: user_db # Default database for 'user'
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    volumes:
+      - shared_db_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d user_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Microservices
+  reservation_api:
+    build: ./reservation_service
+    container_name: reservation_api
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/ || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  order_processing_api:
+    build: ./order_processing_service
+    container_name: order_processing_api
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8002/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 45s
+
+  user_api:
+    build: ./user_service
+    container_name: user_api
+    depends_on:
+      shared_postgres_db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://user:password@shared_postgres_db:5432/user_db
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  event_api:
+    build: ./event_service
+    container_name: event_api
+    depends_on:
+      shared_postgres_db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://user:password@shared_postgres_db:5432/event_db
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8003/ || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  api_gateway:
+    build: ./api_gateway
+    container_name: api_gateway
+    ports:
+      - "80:80"
+    depends_on:
+      user_api:
+        condition: service_healthy
+      event_api:
+        condition: service_healthy
+      reservation_api:
+        condition: service_healthy
+      order_processing_api:
+        condition: service_healthy
+
+volumes:
+  shared_db_data:
