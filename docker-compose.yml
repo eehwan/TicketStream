@@ -78,6 +78,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://user:password@shared_postgres_db:5432/user_db
+      SECRET_KEY: my_super_secret_key_that_is_long_and_secure
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
       interval: 2s

@@ -2,76 +2,78 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 
-from event_api.schemas import EventCreate, EventSchema, SeatCreate, SeatSchema
-from event_api.crud import (
-    create_event, get_event, get_events, update_event, delete_event,
-    create_seat, get_seats_by_event, get_seat, update_seat_reservation_status
-)
+from event_api import crud, schemas
 from event_api.database import get_db
 
-router = APIRouter()
+router = APIRouter(
+    prefix="/api/events",
+    tags=["events"],
+)
 
-@router.post("/events/", response_model=EventSchema, status_code=status.HTTP_201_CREATED)
-def create_new_event(event: EventCreate, db: Session = Depends(get_db)):
-    return create_event(db=db, event=event)
+# ===============================
+# Event Endpoints
+# ===============================
 
-@router.get("/events/", response_model=List[EventSchema])
+@router.post("/", response_model=schemas.Event, status_code=status.HTTP_201_CREATED)
+def create_event(event: schemas.EventCreate, db: Session = Depends(get_db)):
+    return crud.create_event(db=db, event=event)
+
+@router.get("/", response_model=List[schemas.Event])
 def read_events(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    events = get_events(db, skip=skip, limit=limit)
-    return events
+    return crud.get_events(db, skip=skip, limit=limit)
 
-@router.get("/events/{event_id}", response_model=EventSchema)
+@router.get("/{event_id}", response_model=schemas.Event)
 def read_event(event_id: int, db: Session = Depends(get_db)):
-    db_event = get_event(db, event_id=event_id)
+    db_event = crud.get_event(db, event_id=event_id)
     if db_event is None:
         raise HTTPException(status_code=404, detail="Event not found")
     return db_event
 
-@router.put("/events/{event_id}", response_model=EventSchema)
-def update_existing_event(event_id: int, event: EventCreate, db: Session = Depends(get_db)):
-    db_event = update_event(db, event_id=event_id, event_data=event.model_dump(exclude_unset=True))
+@router.put("/{event_id}", response_model=schemas.Event)
+def update_event(event_id: int, event: schemas.EventUpdate, db: Session = Depends(get_db)):
+    db_event = crud.update_event(db, event_id=event_id, event_update=event)
     if db_event is None:
         raise HTTPException(status_code=404, detail="Event not found")
     return db_event
 
-@router.delete("/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_existing_event(event_id: int, db: Session = Depends(get_db)):
-    db_event = delete_event(db, event_id=event_id)
-    if db_event is None:
+@router.delete("/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_event(event_id: int, db: Session = Depends(get_db)):
+    db_event = crud.delete_event(db, event_id=event_id)
+    if not db_event:
         raise HTTPException(status_code=404, detail="Event not found")
-    return {"message": "Event deleted successfully"}
+    return
 
-@router.post("/events/{event_id}/seats/", response_model=SeatSchema, status_code=status.HTTP_201_CREATED)
-def create_new_seat(event_id: int, seat: SeatCreate, db: Session = Depends(get_db)):
-    db_event = get_event(db, event_id=event_id)
-    if db_event is None:
+# ===============================
+# Seat Endpoints
+# ===============================
+
+@router.post("/{event_id}/seats/", response_model=schemas.Seat, status_code=status.HTTP_201_CREATED)
+def create_seat_for_event(event_id: int, seat: schemas.SeatCreate, db: Session = Depends(get_db)):
+    db_event = crud.get_event(db, event_id=event_id)
+    if not db_event:
         raise HTTPException(status_code=404, detail="Event not found")
     if seat.event_id != event_id:
-        raise HTTPException(status_code=400, detail="Seat event_id does not match path event_id")
-    return create_seat(db=db, seat=seat)
+        raise HTTPException(status_code=400, detail="Seat event_id must match the event_id in the path")
+    return crud.create_seat(db=db, seat=seat)
 
-@router.get("/events/{event_id}/seats/", response_model=List[SeatSchema])
+@router.get("/{event_id}/seats/", response_model=List[schemas.Seat])
 def read_seats_for_event(event_id: int, db: Session = Depends(get_db)):
-    db_event = get_event(db, event_id=event_id)
-    if db_event is None:
+    db_event = crud.get_event(db, event_id=event_id)
+    if not db_event:
         raise HTTPException(status_code=404, detail="Event not found")
-    seats = get_seats_by_event(db, event_id=event_id)
-    return seats
+    return crud.get_seats_by_event(db, event_id=event_id)
 
-@router.put("/seats/{seat_id}/reserve", response_model=SeatSchema)
-def reserve_seat(seat_id: int, db: Session = Depends(get_db)):
-    db_seat = update_seat_reservation_status(db, seat_id=seat_id, is_reserved=True)
-    if db_seat is None:
+@router.patch("/seats/{seat_id}", response_model=schemas.Seat)
+def update_seat_status(seat_id: int, seat_update: schemas.SeatUpdate, db: Session = Depends(get_db)):
+    db_seat = crud.get_seat(db, seat_id=seat_id)
+    if not db_seat:
         raise HTTPException(status_code=404, detail="Seat not found")
-    if db_seat.is_reserved:
-        raise HTTPException(status_code=400, detail="Seat already reserved")
-    return db_seat
-
-@router.put("/seats/{seat_id}/unreserve", response_model=SeatSchema)
-def unreserve_seat(seat_id: int, db: Session = Depends(get_db)):
-    db_seat = update_seat_reservation_status(db, seat_id=seat_id, is_reserved=False)
-    if db_seat is None:
-        raise HTTPException(status_code=404, detail="Seat not found")
-    if not db_seat.is_reserved:
+    
+    # Prevent changing reservation status if it's already in the requested state
+    if db_seat.is_reserved and seat_update.is_reserved:
+        raise HTTPException(status_code=400, detail="Seat is already reserved")
+    if not db_seat.is_reserved and not seat_update.is_reserved:
         raise HTTPException(status_code=400, detail="Seat is not reserved")
-    return db_seat
+
+    updated_seat = crud.update_seat(db, seat_id=seat_id, seat_update=seat_update)
+    return updated_seat

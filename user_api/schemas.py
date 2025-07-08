@@ -1,15 +1,30 @@
+from typing import Optional
 from pydantic import BaseModel
 
-class UserCreate(BaseModel):
+# ===============================
+# User Schemas
+# ===============================
+
+class UserBase(BaseModel):
     email: str
+
+class UserCreate(UserBase):
     password: str
 
-class UserSchema(BaseModel):
+class UserUpdate(BaseModel):
+    password: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class User(UserBase):
     id: int
-    email: str
+    is_active: Optional[bool] = True
 
     class Config:
         from_attributes = True
+
+# ===============================
+# Token Schema
+# ===============================
 
 class Token(BaseModel):
     access_token: str

@@ -2,6 +2,10 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
 
+# ===============================
+# Event Schemas
+# ===============================
+
 class EventBase(BaseModel):
     name: str
     description: Optional[str] = None
@@ -11,7 +15,13 @@ class EventBase(BaseModel):
 class EventCreate(EventBase):
     pass
 
-class EventSchema(EventBase):
+class EventUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    event_date: Optional[datetime] = None
+    total_seats: Optional[int] = None
+
+class Event(EventBase):
     id: int
     available_seats: int
     created_at: datetime
@@ -20,6 +30,10 @@ class EventSchema(EventBase):
     class Config:
         from_attributes = True
 
+# ===============================
+# Seat Schemas
+# ===============================
+
 class SeatBase(BaseModel):
     event_id: int
     seat_number: str
@@ -27,7 +41,10 @@ class SeatBase(BaseModel):
 class SeatCreate(SeatBase):
     pass
 
-class SeatSchema(SeatBase):
+class SeatUpdate(BaseModel):
+    is_reserved: bool
+
+class Seat(SeatBase):
     id: int
     is_reserved: bool
 

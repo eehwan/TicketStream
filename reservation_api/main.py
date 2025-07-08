@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-@app.post("/reservations/")
+@app.post("/api/reservations/")
 def create_reservation(reservation: dict):
     """
     예매 요청을 받아 Kafka 토픽으로 전송합니다.
