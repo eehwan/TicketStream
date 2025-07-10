@@ -63,17 +63,10 @@ def read_seats_for_event(event_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Event not found")
     return crud.get_seats_by_event(db, event_id=event_id)
 
-@router.patch("/seats/{seat_id}", response_model=schemas.Seat)
-def update_seat_status(seat_id: int, seat_update: schemas.SeatUpdate, db: Session = Depends(get_db)):
-    db_seat = crud.get_seat(db, seat_id=seat_id)
+@router.get("/{event_id}/seats/{seat_number}", response_model=schemas.Seat)
+def read_seat_by_number(event_id: int, seat_number: str, db: Session = Depends(get_db)):
+    db_seat = crud.get_seat_by_number_and_event(db, event_id=event_id, seat_number=seat_number)
     if not db_seat:
         raise HTTPException(status_code=404, detail="Seat not found")
-    
-    # Prevent changing reservation status if it's already in the requested state
-    if db_seat.is_reserved and seat_update.is_reserved:
-        raise HTTPException(status_code=400, detail="Seat is already reserved")
-    if not db_seat.is_reserved and not seat_update.is_reserved:
-        raise HTTPException(status_code=400, detail="Seat is not reserved")
+    return db_seat
 
-    updated_seat = crud.update_seat(db, seat_id=seat_id, seat_update=seat_update)
-    return updated_seat

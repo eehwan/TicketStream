@@ -61,3 +61,14 @@ def update_seat(db: Session, seat_id: int, seat_update: schemas.SeatUpdate):
         db.commit()
         db.refresh(db_seat)
     return db_seat
+
+def get_seat_by_number_and_event(db: Session, event_id: int, seat_number: str):
+    return db.query(models.Seat).filter(models.Seat.event_id == event_id, models.Seat.seat_number == seat_number).first()
+
+def update_seat_reservation_status(db: Session, seat_number: str, event_id: int, is_reserved: bool):
+    db_seat = get_seat_by_number_and_event(db, event_id, seat_number)
+    if db_seat:
+        db_seat.is_reserved = is_reserved
+        db.commit()
+        db.refresh(db_seat)
+    return db_seat
