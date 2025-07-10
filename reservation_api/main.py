@@ -7,44 +7,18 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Depends
 from aiokafka import AIOKafkaProducer
 from aiokafka.errors import KafkaConnectionError
-
-from sqlalchemy import create_engine, Column, String, Integer, DateTime, Boolean
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session
 
 import json
 import os
 
+from reservation_api.database import Base, engine, get_db
+from reservation_api.models import ReservationAttempt
+from reservation_api import crud, schemas
+
 # 로거 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# 데이터베이스 설정
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@shared_postgres_db:5432/reservation_db")
-engine = create_engine(DATABASE_URL)
-Base = declarative_base()
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# DB 모델 정의
-class ReservationAttempt(Base):
-    __tablename__ = "reservation_attempts"
-
-    id = Column(Integer, primary_key=True, index=True)
-    reservation_attempt_id = Column(String, unique=True, index=True, nullable=False)
-    user_id = Column(Integer, nullable=False)
-    event_id = Column(Integer, nullable=False)
-    requested_seat_id = Column(String, nullable=False)
-    status = Column(String, default="PENDING", nullable=False) # PENDING, ALLOCATED, FAILED
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-
-# DB 세션 의존성
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 producer: AIOKafkaProducer = None
 
@@ -83,9 +57,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-@app.post("/api/reservations/")
+@app.post("/api/reservations/", response_model=schemas.ReservationAttempt)
 async def create_reservation(
-    reservation_request: dict, # Renamed for clarity
+    reservation_request: schemas.ReservationAttemptCreate,
     db: Session = Depends(get_db)
 ):
     """
@@ -97,36 +71,23 @@ async def create_reservation(
     try:
         reservation_attempt_id = str(uuid4())
         
-        # Save reservation attempt to database
-        new_attempt = ReservationAttempt(
-            reservation_attempt_id=reservation_attempt_id,
-            user_id=reservation_request.get("user_id"),
-            event_id=reservation_request.get("event_id"),
-            requested_seat_id=reservation_request.get("seat_id"),
-            status="PENDING"
-        )
-        db.add(new_attempt)
-        db.commit()
-        db.refresh(new_attempt)
+        # Save reservation attempt to database using CRUD function
+        new_attempt = crud.create_reservation_attempt(db, reservation_request, reservation_attempt_id)
         logger.info(f"Reservation attempt {reservation_attempt_id} saved to DB.")
 
         # Prepare the event data
         event_data = {
-            "reservation_attempt_id": reservation_attempt_id,
-            "user_id": reservation_request.get("user_id"),
-            "event_id": reservation_request.get("event_id"),
-            "requested_seat_id": reservation_request.get("seat_id"),
+            "reservation_attempt_id": new_attempt.reservation_attempt_id,
+            "user_id": new_attempt.user_id,
+            "event_id": new_attempt.event_id,
+            "requested_seat_id": new_attempt.requested_seat_id,
             "timestamp": datetime.utcnow().isoformat() + "Z"
         }
         # 'reservation_attempts' 토픽으로 메시지 전송
         await producer.send_and_wait('reservation_attempts', value=event_data)
         logger.info(f"Reservation attempt {reservation_attempt_id} sent to Kafka.")
 
-        return {
-            "status": "success",
-            "message": "Reservation request received and is being processed.",
-            "reservation_attempt_id": reservation_attempt_id
-        }
+        return new_attempt # Return the created reservation attempt object
     except Exception as e:
         db.rollback() # Rollback in case of error
         logger.error(f"Failed to process reservation request: {e}")

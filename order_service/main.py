@@ -9,13 +9,13 @@ from fastapi import FastAPI, Depends
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from aiokafka.errors import KafkaConnectionError
 
-from sqlalchemy import create_engine, Column, String, Integer, DateTime
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session
 
 import json
 import os
-from uuid import uuid4
+
+from order_service.database import Base, engine, get_db
+from order_service import crud, schemas
 
 # 로거 설정
 logging.basicConfig(level=logging.INFO)
@@ -29,33 +29,6 @@ PAYMENT_EVENTS_TOPIC = "payment_events" # 새로운 토픽
 consumer: AIOKafkaConsumer = None
 producer: AIOKafkaProducer = None
 consumer_task: asyncio.Task = None
-
-# 데이터베이스 설정
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@shared_postgres_db:5432/order_db")
-engine = create_engine(DATABASE_URL)
-Base = declarative_base()
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# DB 모델 정의
-class Order(Base):
-    __tablename__ = "orders"
-    id = Column(Integer, primary_key=True, index=True)
-    order_id = Column(String, unique=True, index=True, nullable=False)
-    reservation_attempt_id = Column(String, nullable=False)
-    user_id = Column(Integer, nullable=False)
-    event_id = Column(Integer, nullable=False)
-    seat_id = Column(String, nullable=False)
-    status = Column(String, default="PENDING", nullable=False)  # PENDING, COMPLETED, FAILED
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-
-# DB 세션 의존성
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 async def send_payment_event(event_data: dict):
     """결제 관련 이벤트를 Kafka에 전송합니다."""
@@ -79,25 +52,21 @@ async def consume_messages():
                 logger.info(f"Successfully deserialized event: {event_data}")
 
                 if event_data.get("event_type") == "SeatAllocated":
-                    # --- 1. 주문 생성 (Status: PENDING) ---
                     db = next(get_db())
                     try:
-                        new_order = Order(
-                            order_id=str(uuid4()),
+                        # Create order using CRUD function
+                        order_create_data = schemas.OrderCreate(
                             reservation_attempt_id=event_data.get("reservation_attempt_id"),
                             user_id=event_data.get("user_id"),
                             event_id=event_data.get("event_id"),
-                            seat_id=event_data.get("seat_id"),
-                            status="PENDING"
+                            seat_id=event_data.get("seat_id")
                         )
-                        db.add(new_order)
-                        db.commit()
-                        db.refresh(new_order)
+                        new_order = crud.create_order(db, order_create_data)
                         logger.info(f"Order {new_order.order_id} created with PENDING status.")
 
                         # --- 2. 모의 결제 처리 ---
-                        await asyncio.sleep(2)  # 결제 처리 시간 시뮬레이션
-                        payment_successful = random.random() < 0.9  # 90% 결제 성공 확률
+                        await asyncio.sleep(2)  # Simulate payment processing time
+                        payment_successful = random.random() < 0.9  # 90% success rate
 
                         payment_event = {
                             "order_id": new_order.order_id,
@@ -109,16 +78,14 @@ async def consume_messages():
                         }
 
                         if payment_successful:
-                            new_order.status = "COMPLETED"
+                            crud.update_order_status(db, new_order.order_id, "COMPLETED")
                             payment_event["event_type"] = "PaymentSuccessful"
                             logger.info(f"Mock payment SUCCEEDED for order {new_order.order_id}.")
                         else:
-                            new_order.status = "FAILED"
+                            crud.update_order_status(db, new_order.order_id, "FAILED")
                             payment_event["event_type"] = "PaymentFailed"
                             logger.error(f"Mock payment FAILED for order {new_order.order_id}.")
                         
-                        db.commit()
-
                         # --- 3. 결제 결과 이벤트 발행 ---
                         await send_payment_event(payment_event)
 
