@@ -80,7 +80,7 @@ async def create_reservation(
             "reservation_attempt_id": new_attempt.reservation_attempt_id,
             "user_id": new_attempt.user_id,
             "event_id": new_attempt.event_id,
-            "requested_seat_id": new_attempt.requested_seat_id,
+            "seat_id": new_attempt.seat_id,
             "timestamp": datetime.utcnow().isoformat() + "Z"
         }
         # 'reservation_attempts' 토픽으로 메시지 전송

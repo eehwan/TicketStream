@@ -66,7 +66,7 @@ async def consume_messages():
 
                         # --- 2. 모의 결제 처리 ---
                         await asyncio.sleep(2)  # Simulate payment processing time
-                        payment_successful = random.random() < 0.9  # 90% success rate
+                        payment_successful = random.random() < 0.6  # 60% 결제 성공 확률
 
                         payment_event = {
                             "order_id": new_order.order_id,

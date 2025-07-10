@@ -5,7 +5,7 @@ from datetime import datetime
 class ReservationAttemptBase(BaseModel):
     user_id: int
     event_id: int
-    requested_seat_id: str
+    seat_id: str
 
 class ReservationAttemptCreate(ReservationAttemptBase):
     pass

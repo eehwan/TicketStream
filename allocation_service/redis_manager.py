@@ -54,37 +54,50 @@ async def release_seat(producer, SEAT_ALLOCATIONS_TOPIC, event_id: int, seat_id:
 
 async def handle_reservation_attempt(producer, SEAT_ALLOCATIONS_TOPIC, event_data: dict):
     """예약 시도 이벤트를 처리합니다."""
-    redis_key = f"allocated_seat:{event_data['event_id']}:{event_data['requested_seat_id']}"
+    # event_data에서 필요한 필드를 안전하게 추출
+    seat_id = event_data.get('seat_id')
+    event_id = event_data.get('event_id')
+    reservation_attempt_id = event_data.get('reservation_attempt_id')
+    user_id = event_data.get('user_id')
+
+    # 필수 필드 누락 검사
+    if not all([seat_id, event_id, reservation_attempt_id, user_id]):
+        logger.error(f"Missing required fields in reservation attempt event: {event_data}")
+        # 이 경우 SeatAllocationFailed 이벤트를 발행하여 예약 시도 실패를 알릴 수 있습니다.
+        # 여기서는 간단히 함수를 종료합니다.
+        return
+
+    redis_key = f"allocated_seat:{event_id}:{seat_id}"
     allocation_data = {
-        "reservation_attempt_id": event_data['reservation_attempt_id'],
-        "user_id": event_data['user_id'],
+        "reservation_attempt_id": reservation_attempt_id,
+        "user_id": user_id,
         "allocated_at": datetime.utcnow().isoformat() + "Z"
     }
     
     if await redis_client.setnx(redis_key, json.dumps(allocation_data)):
         await redis_client.expire(redis_key, SEAT_ALLOCATION_TTL_SECONDS)
-        logger.info(f"Seat {event_data['requested_seat_id']} allocated successfully.")
+        logger.info(f"Seat {seat_id} allocated successfully.")
         await producer.send_and_wait(
             SEAT_ALLOCATIONS_TOPIC,
             value={
                 "event_type": "SeatAllocated",
-                "reservation_attempt_id": event_data['reservation_attempt_id'],
-                "user_id": event_data['user_id'],
-                "event_id": event_data['event_id'],
-                "seat_id": event_data['requested_seat_id'],
+                "reservation_attempt_id": reservation_attempt_id,
+                "user_id": user_id,
+                "event_id": event_id,
+                "seat_id": seat_id,
                 "timestamp": datetime.utcnow().isoformat() + "Z"
             }
         )
     else:
-        logger.warning(f"Seat {event_data['requested_seat_id']} already allocated.")
+        logger.warning(f"Seat {seat_id} already allocated.")
         await producer.send_and_wait(
             SEAT_ALLOCATIONS_TOPIC,
             value={
                 "event_type": "SeatAllocationFailed",
-                "reservation_attempt_id": event_data['reservation_attempt_id'],
-                "user_id": event_data['user_id'],
-                "event_id": event_data['event_id'],
-                "seat_id": event_data['requested_seat_id'],
+                "reservation_attempt_id": reservation_attempt_id,
+                "user_id": user_id,
+                "event_id": event_id,
+                "seat_id": seat_id,
                 "reason": "AlreadyAllocated",
                 "timestamp": datetime.utcnow().isoformat() + "Z"
             }

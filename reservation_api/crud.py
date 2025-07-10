@@ -7,7 +7,7 @@ def create_reservation_attempt(db: Session, reservation_attempt: ReservationAtte
         reservation_attempt_id=reservation_attempt_id,
         user_id=reservation_attempt.user_id,
         event_id=reservation_attempt.event_id,
-        requested_seat_id=reservation_attempt.requested_seat_id,
+        seat_id=reservation_attempt.seat_id,
         status="PENDING"
     )
     db.add(db_reservation_attempt)

@@ -11,7 +11,7 @@ class ReservationAttempt(Base):
     reservation_attempt_id = Column(String, unique=True, index=True, nullable=False)
     user_id = Column(Integer, nullable=False)
     event_id = Column(Integer, nullable=False)
-    requested_seat_id = Column(String, nullable=False)
+    seat_id = Column(String, nullable=False)
     status = Column(String, default="PENDING", nullable=False) # PENDING, ALLOCATED, FAILED
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
