@@ -15,6 +15,7 @@ import os
 from reservation_api.database import Base, engine, get_db
 from reservation_api.models import ReservationAttempt
 from reservation_api import crud, schemas
+from common.tracing import setup_telemetry # common 모듈 임포트
 
 # 로거 설정
 logging.basicConfig(level=logging.INFO)
@@ -24,6 +25,10 @@ producer: AIOKafkaProducer = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("Setting up OpenTelemetry...")
+    setup_telemetry(app) # 공통 함수 호출
+    logger.info("OpenTelemetry setup complete.")
+
     global producer
     logger.info("Attempting to connect to Kafka producer...")
     loop = asyncio.get_event_loop()

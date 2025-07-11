@@ -9,6 +9,7 @@ from aiokafka.errors import KafkaConnectionError
 from event_api.database import Base, engine, SessionLocal
 from event_api.routers import events
 from event_api import crud
+from common.tracing import setup_telemetry # common 모듈 임포트
 
 import json
 
@@ -71,6 +72,10 @@ async def consume_messages():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("Setting up OpenTelemetry...")
+    setup_telemetry(app) # 공통 함수 호출
+    logger.info("OpenTelemetry setup complete.")
+
     global consumer, consumer_task
     logger.info("Creating database tables for Event Service...")
     try:

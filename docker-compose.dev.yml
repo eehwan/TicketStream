@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  reservation_api:
+    volumes:
+      - ./reservation_api:/app/reservation_api
+      - ./common:/app/common
+
+  order_service:
+    volumes:
+      - ./order_service:/app/order_service
+      - ./common:/app/common
+
+  allocation_service:
+    volumes:
+      - ./allocation_service:/app/allocation_service
+      - ./common:/app/common
+
+  user_api:
+    volumes:
+      - ./user_api:/app/user_api
+      - ./common:/app/common
+
+  event_api:
+    volumes:
+      - ./event_api:/app/event_api
+      - ./common:/app/common
+
+  api_gateway:
+    volumes:
+      - ./api_gateway/nginx.conf:/etc/nginx/conf.d/default.conf

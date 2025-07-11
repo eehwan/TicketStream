@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # Redpanda - Kafka compatible message queue
+  # Kafka-compatible message broker
   kafka:
     image: redpandadata/redpanda:latest
     container_name: kafka
@@ -21,56 +21,24 @@ services:
       timeout: 5s
       retries: 3
 
-  # Shared PostgreSQL Database
+  # Shared PostgreSQL database
   shared_postgres_db:
     image: postgres:13
     container_name: shared_postgres_db
     environment:
-      POSTGRES_DB: user_db # Default database for 'user'
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+      POSTGRES_DB: user_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - shared_db_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d user_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d user_db"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  # Microservices
-  reservation_api:
-    build: ./reservation_api
-    container_name: reservation_api
-    depends_on:
-      kafka:
-        condition: service_healthy
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      DATABASE_URL: postgresql://user:password@shared_postgres_db:5432/reservation_db
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8001/ || exit 1"]
-      interval: 2s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-
-  order_service:
-    build: ./order_service
-    container_name: order_service
-    depends_on:
-      kafka:
-        condition: service_healthy
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      DATABASE_URL: postgresql://user:password@shared_postgres_db:5432/order_db
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8002/ || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 15
-      start_period: 45s
-
+  # Redis for seat allocation
   redis:
     image: redis:7-alpine
     container_name: redis
@@ -80,34 +48,23 @@ services:
     volumes:
       - redis_data:/data
 
-  allocation_service:
-    build: ./allocation_service
-    container_name: allocation_service
+  # Reservation API: Handles initial reservation requests
+  reservation_api:
+    build:
+      context: .
+      dockerfile: ./Dockerfile.python
+      args:
+        SERVICE_NAME: reservation_api
+    container_name: reservation_api
     depends_on:
       kafka:
         condition: service_healthy
-      redis:
-        condition: service_started
     environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8004/ || exit 1"] # Assuming a new port for allocation_service
-      interval: 10s
-      timeout: 5s
-      retries: 15
-      start_period: 45s
-
-  user_api:
-    build: ./user_api
-    container_name: user_api
-    depends_on:
-      shared_postgres_db:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql://user:password@shared_postgres_db:5432/user_db
-      SECRET_KEY: my_super_secret_key_that_is_long_and_secure
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      DATABASE_URL: ${RESERVATION_DB_URL}
+      OTEL_EXPORTER_JAEGER_AGENT_HOST: ${OTEL_EXPORTER_JAEGER_AGENT_HOST}
+      OTEL_EXPORTER_JAEGER_AGENT_PORT: ${OTEL_EXPORTER_JAEGER_AGENT_PORT}
+      OTEL_SERVICE_NAME: reservation_api
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
       interval: 2s
@@ -115,37 +72,128 @@ services:
       retries: 3
       start_period: 10s
 
-  event_api:
-    build: ./event_api
-    container_name: event_api
+  # Order Service: Processes seat allocations and payments
+  order_service:
+    build:
+      context: .
+      dockerfile: ./Dockerfile.python
+      args:
+        SERVICE_NAME: order_service
+    container_name: order_service
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      DATABASE_URL: ${ORDER_DB_URL}
+      OTEL_EXPORTER_JAEGER_AGENT_HOST: ${OTEL_EXPORTER_JAEGER_AGENT_HOST}
+      OTEL_EXPORTER_JAEGER_AGENT_PORT: ${OTEL_EXPORTER_JAEGER_AGENT_PORT}
+      OTEL_SERVICE_NAME: order_service
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 45s
+
+  # Allocation Service: Manages seat availability
+  allocation_service:
+    build:
+      context: .
+      dockerfile: ./Dockerfile.python
+      args:
+        SERVICE_NAME: allocation_service
+    container_name: allocation_service
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      OTEL_EXPORTER_JAEGER_AGENT_HOST: ${OTEL_EXPORTER_JAEGER_AGENT_HOST}
+      OTEL_EXPORTER_JAEGER_AGENT_PORT: ${OTEL_EXPORTER_JAEGER_AGENT_PORT}
+      OTEL_SERVICE_NAME: allocation_service
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 45s
+
+  # User API: Manages user accounts
+  user_api:
+    build:
+      context: .
+      dockerfile: ./Dockerfile.python
+      args:
+        SERVICE_NAME: user_api
+    container_name: user_api
     depends_on:
       shared_postgres_db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://user:password@shared_postgres_db:5432/event_db
+      DATABASE_URL: ${USER_DB_URL}
+      SECRET_KEY: ${USER_API_SECRET_KEY}
+      OTEL_EXPORTER_JAEGER_AGENT_HOST: ${OTEL_EXPORTER_JAEGER_AGENT_HOST}
+      OTEL_EXPORTER_JAEGER_AGENT_PORT: ${OTEL_EXPORTER_JAEGER_AGENT_PORT}
+      OTEL_SERVICE_NAME: user_api
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8003/ || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
       interval: 2s
       timeout: 5s
       retries: 3
       start_period: 10s
 
+  # Event API: Provides event information
+  event_api:
+    build:
+      context: .
+      dockerfile: ./Dockerfile.python
+      args:
+        SERVICE_NAME: event_api
+    container_name: event_api
+    depends_on:
+      shared_postgres_db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${EVENT_DB_URL}
+      OTEL_EXPORTER_JAEGER_AGENT_HOST: ${OTEL_EXPORTER_JAEGER_AGENT_HOST}
+      OTEL_EXPORTER_JAEGER_AGENT_PORT: ${OTEL_EXPORTER_JAEGER_AGENT_PORT}
+      OTEL_SERVICE_NAME: event_api
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # API Gateway: Nginx reverse proxy
   api_gateway:
     build: ./api_gateway
     container_name: api_gateway
     ports:
       - "80:80"
     depends_on:
-      user_api:
-        condition: service_healthy
-      event_api:
-        condition: service_healthy
-      reservation_api:
-        condition: service_healthy
-      order_service:
-        condition: service_healthy
-      allocation_service:
-        condition: service_healthy
+      - user_api
+      - event_api
+      - reservation_api
+      - order_service
+      - allocation_service
+
+  # Jaeger: Distributed tracing system
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger
+    ports:
+      - "16686:16686"
+      - "6831:6831/udp"
+    # environment:
+    #   - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+    #   - JAEGER_UI_BASE_PATH=/jaeger
+    command: ["--collector.zipkin.host-port=:9411", "--ui.path-prefix=/jaeger"]
 
 volumes:
   shared_db_data:

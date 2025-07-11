@@ -1,4 +1,3 @@
-
 import asyncio
 import logging
 import random
@@ -16,6 +15,7 @@ import os
 
 from order_service.database import Base, engine, get_db
 from order_service import crud, schemas
+from common.tracing import setup_telemetry # common 모듈 임포트
 
 # 로거 설정
 logging.basicConfig(level=logging.INFO)
@@ -105,6 +105,10 @@ async def consume_messages():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("Setting up OpenTelemetry...")
+    setup_telemetry(app) # 공통 함수 호출
+    logger.info("OpenTelemetry setup complete.")
+
     global consumer, producer, consumer_task
     loop = asyncio.get_event_loop()
 
